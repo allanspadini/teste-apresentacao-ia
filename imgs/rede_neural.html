@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Perceptron de Múltiplas Camadas - Three.js</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        .controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+        }
+        button {
+            margin: 5px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        #info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls" style="left: auto; right: 10px;">
+        <h3>Perceptron de Múltiplas Camadas</h3>
+        <button id="train">Treinar 1 Época</button>
+        <button id="train10">Treinar 10 Épocas</button>
+        <button id="reset">Resetar Rede</button>
+        <div>
+            <label for="learningRate">Taxa de Aprendizado: </label>
+            <input type="range" id="learningRate" min="0.01" max="0.5" step="0.01" value="0.1">
+            <span id="lrValue">0.1</span>
+        </div>
+        <div>
+            <p>Problema XOR</p>
+            <p>Entradas: [0,0], [0,1], [1,0], [1,1]</p>
+            <p>Saídas esperadas: [0], [1], [1], [0]</p>
+        </div>
+        <div>
+            <p>Erro atual: <span id="error">---</span></p>
+        </div>
+    </div>
+
+    <div id="info" style="left: auto; right: 10px; bottom: 140px;">
+        <p>Camada de entrada (verde): 2 neurônios</p>
+        <p>Camada oculta (azul): 4 neurônios</p>
+        <p>Camada de saída (vermelho): 1 neurônio</p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Classes para implementar um Perceptron de Múltiplas Camadas
+        class Neuron {
+            constructor(inputs) {
+                this.weights = [];
+                this.bias = Math.random() * 2 - 1;
+                
+                // Inicializar pesos aleatoriamente
+                for (let i = 0; i < inputs; i++) {
+                    this.weights.push(Math.random() * 2 - 1);
+                }
+                
+                this.output = 0;
+                this.error = 0;
+                this.delta = 0;
+            }
+            
+            activate(inputs) {
+                let sum = this.bias;
+                for (let i = 0; i < inputs.length; i++) {
+                    sum += inputs[i] * this.weights[i];
+                }
+                
+                // Função de ativação sigmoide
+                this.output = 1 / (1 + Math.exp(-sum));
+                return this.output;
+            }
+        }
+
+        class Layer {
+            constructor(neuronCount, inputCount) {
+                this.neurons = [];
+                
+                for (let i = 0; i < neuronCount; i++) {
+                    this.neurons.push(new Neuron(inputCount));
+                }
+            }
+            
+            forward(inputs) {
+                const outputs = [];
+                
+                for (let neuron of this.neurons) {
+                    outputs.push(neuron.activate(inputs));
+                }
+                
+                return outputs;
+            }
+        }
+
+        class NeuralNetwork {
+            constructor(inputSize, hiddenSize, outputSize) {
+                this.inputLayer = new Layer(inputSize, 0);
+                this.hiddenLayer = new Layer(hiddenSize, inputSize);
+                this.outputLayer = new Layer(outputSize, hiddenSize);
+                
+                // Dados XOR
+                this.trainingData = [
+                    { inputs: [0, 0], targets: [0] },
+                    { inputs: [0, 1], targets: [1] },
+                    { inputs: [1, 0], targets: [1] },
+                    { inputs: [1, 1], targets: [0] }
+                ];
+                
+                this.learningRate = 0.1;
+            }
+            
+            setLearningRate(rate) {
+                this.learningRate = rate;
+            }
+            
+            feedForward(inputs) {
+                // Configurar entradas
+                for (let i = 0; i < inputs.length; i++) {
+                    this.inputLayer.neurons[i].output = inputs[i];
+                }
+                
+                // Forward pass
+                const hiddenOutputs = this.hiddenLayer.forward(inputs);
+                const finalOutputs = this.outputLayer.forward(hiddenOutputs);
+                
+                return finalOutputs;
+            }
+            
+            backpropagate(targets) {
+                // Calcular erro para neurônios de saída
+                for (let i = 0; i < this.outputLayer.neurons.length; i++) {
+                    const neuron = this.outputLayer.neurons[i];
+                    const output = neuron.output;
+                    const error = targets[i] - output;
+                    neuron.error = error;
+                    neuron.delta = error * output * (1 - output);
+                }
+                
+                // Calcular erro para neurônios da camada oculta
+                for (let i = 0; i < this.hiddenLayer.neurons.length; i++) {
+                    const neuron = this.hiddenLayer.neurons[i];
+                    const output = neuron.output;
+                    let error = 0;
+                    
+                    for (let j = 0; j < this.outputLayer.neurons.length; j++) {
+                        const outputNeuron = this.outputLayer.neurons[j];
+                        error += outputNeuron.delta * outputNeuron.weights[i];
+                    }
+                    
+                    neuron.error = error;
+                    neuron.delta = error * output * (1 - output);
+                }
+                
+                // Atualizar pesos da camada de saída
+                for (let i = 0; i < this.outputLayer.neurons.length; i++) {
+                    const neuron = this.outputLayer.neurons[i];
+                    
+                    for (let j = 0; j < neuron.weights.length; j++) {
+                        const hiddenOutput = this.hiddenLayer.neurons[j].output;
+                        const delta = this.learningRate * neuron.delta * hiddenOutput;
+                        neuron.weights[j] += delta;
+                    }
+                    
+                    neuron.bias += this.learningRate * neuron.delta;
+                }
+                
+                // Atualizar pesos da camada oculta
+                for (let i = 0; i < this.hiddenLayer.neurons.length; i++) {
+                    const neuron = this.hiddenLayer.neurons[i];
+                    
+                    for (let j = 0; j < neuron.weights.length; j++) {
+                        const input = this.inputLayer.neurons[j].output;
+                        const delta = this.learningRate * neuron.delta * input;
+                        neuron.weights[j] += delta;
+                    }
+                    
+                    neuron.bias += this.learningRate * neuron.delta;
+                }
+            }
+            
+            trainEpoch() {
+                let totalError = 0;
+                
+                for (const example of this.trainingData) {
+                    const { inputs, targets } = example;
+                    const outputs = this.feedForward(inputs);
+                    
+                    // Calcular erro quadrático médio
+                    for (let i = 0; i < outputs.length; i++) {
+                        totalError += Math.pow(targets[i] - outputs[i], 2);
+                    }
+                    
+                    this.backpropagate(targets);
+                }
+                
+                return totalError / this.trainingData.length;
+            }
+            
+            predict(inputs) {
+                return this.feedForward(inputs);
+            }
+            
+            reset() {
+                this.inputLayer = new Layer(this.inputLayer.neurons.length, 0);
+                this.hiddenLayer = new Layer(this.hiddenLayer.neurons.length, this.inputLayer.neurons.length);
+                this.outputLayer = new Layer(this.outputLayer.neurons.length, this.hiddenLayer.neurons.length);
+            }
+        }
+
+        // Configuração da visualização com Three.js
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xf0f0f0);
+        
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 15;
+        camera.position.x = 6; // Centraliza a câmera na rede
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+        
+        // Criar rede neural
+        const nn = new NeuralNetwork(2, 4, 1);
+        
+        // Materiais
+        const inputMaterial = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
+        const hiddenMaterial = new THREE.MeshPhongMaterial({ color: 0x0088ff });
+        const outputMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+        const connMaterial = new THREE.LineBasicMaterial({ color: 0x888888 });
+        const activeConnMaterial = new THREE.LineBasicMaterial({ color: 0x333333 });
+        
+        const sphereGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+        
+        // Posições
+        const layerPositions = [
+            { x: -6, y: 0, z: 0 },  // Input layer
+            { x: 0, y: 0, z: 0 },   // Hidden layer
+            { x: 6, y: 0, z: 0 }    // Output layer
+        ];
+        
+        // Grupos para camadas
+        const inputLayer = new THREE.Group();
+        const hiddenLayer = new THREE.Group();
+        const outputLayer = new THREE.Group();
+        const connections = new THREE.Group();
+        
+        scene.add(inputLayer);
+        scene.add(hiddenLayer);
+        scene.add(outputLayer);
+        scene.add(connections);
+        
+        // Criar neurônios
+        function createNeurons() {
+            // Clear existing neurons
+            while(inputLayer.children.length > 0) { 
+                inputLayer.remove(inputLayer.children[0]); 
+            }
+            while(hiddenLayer.children.length > 0) { 
+                hiddenLayer.remove(hiddenLayer.children[0]); 
+            }
+            while(outputLayer.children.length > 0) { 
+                outputLayer.remove(outputLayer.children[0]); 
+            }
+            while(connections.children.length > 0) { 
+                connections.remove(connections.children[0]); 
+            }
+            
+            // Input layer
+            for (let i = 0; i < nn.inputLayer.neurons.length; i++) {
+                const neuron = new THREE.Mesh(sphereGeometry, inputMaterial);
+                const y = (i - (nn.inputLayer.neurons.length - 1) / 2) * 2;
+                neuron.position.set(layerPositions[0].x, y, layerPositions[0].z);
+                inputLayer.add(neuron);
+            }
+            
+            // Hidden layer
+            for (let i = 0; i < nn.hiddenLayer.neurons.length; i++) {
+                const neuron = new THREE.Mesh(sphereGeometry, hiddenMaterial);
+                const y = (i - (nn.hiddenLayer.neurons.length - 1) / 2) * 2;
+                neuron.position.set(layerPositions[1].x, y, layerPositions[1].z);
+                hiddenLayer.add(neuron);
+            }
+            
+            // Output layer
+            for (let i = 0; i < nn.outputLayer.neurons.length; i++) {
+                const neuron = new THREE.Mesh(sphereGeometry, outputMaterial);
+                const y = (i - (nn.outputLayer.neurons.length - 1) / 2) * 2;
+                neuron.position.set(layerPositions[2].x, y, layerPositions[2].z);
+                outputLayer.add(neuron);
+            }
+            
+            // Connections from input to hidden
+            for (let i = 0; i < inputLayer.children.length; i++) {
+                for (let j = 0; j < hiddenLayer.children.length; j++) {
+                    const startPos = inputLayer.children[i].position;
+                    const endPos = hiddenLayer.children[j].position;
+                    
+                    const geometry = new THREE.BufferGeometry().setFromPoints([
+                        new THREE.Vector3(startPos.x, startPos.y, startPos.z),
+                        new THREE.Vector3(endPos.x, endPos.y, endPos.z)
+                    ]);
+                    
+                    const line = new THREE.Line(geometry, connMaterial);
+                    connections.add(line);
+                }
+            }
+            
+            // Connections from hidden to output
+            for (let i = 0; i < hiddenLayer.children.length; i++) {
+                for (let j = 0; j < outputLayer.children.length; j++) {
+                    const startPos = hiddenLayer.children[i].position;
+                    const endPos = outputLayer.children[j].position;
+                    
+                    const geometry = new THREE.BufferGeometry().setFromPoints([
+                        new THREE.Vector3(startPos.x, startPos.y, startPos.z),
+                        new THREE.Vector3(endPos.x, endPos.y, endPos.z)
+                    ]);
+                    
+                    const line = new THREE.Line(geometry, connMaterial);
+                    connections.add(line);
+                }
+            }
+        }
+        
+        // Atualizar visualização
+        function updateVisualization() {
+            // Update neuron size based on output value
+            for (let i = 0; i < hiddenLayer.children.length; i++) {
+                const neuron = hiddenLayer.children[i];
+                const output = nn.hiddenLayer.neurons[i].output;
+                neuron.scale.set(0.5 + output, 0.5 + output, 0.5 + output);
+            }
+            
+            for (let i = 0; i < outputLayer.children.length; i++) {
+                const neuron = outputLayer.children[i];
+                const output = nn.outputLayer.neurons[i].output;
+                neuron.scale.set(0.5 + output, 0.5 + output, 0.5 + output);
+            }
+            
+            // Update connection thickness based on weight
+            let connIndex = 0;
+            
+            // Input to hidden connections
+            for (let i = 0; i < nn.inputLayer.neurons.length; i++) {
+                for (let j = 0; j < nn.hiddenLayer.neurons.length; j++) {
+                    const weight = nn.hiddenLayer.neurons[j].weights[i];
+                    const normalizedWeight = (weight + 1) / 2; // Normalize to 0-1
+                    const line = connections.children[connIndex];
+                    line.material = weight > 0 ? activeConnMaterial : connMaterial;
+                    connIndex++;
+                }
+            }
+            
+            // Hidden to output connections
+            for (let i = 0; i < nn.hiddenLayer.neurons.length; i++) {
+                for (let j = 0; j < nn.outputLayer.neurons.length; j++) {
+                    const weight = nn.outputLayer.neurons[j].weights[i];
+                    const normalizedWeight = (weight + 1) / 2; // Normalize to 0-1
+                    const line = connections.children[connIndex];
+                    line.material = weight > 0 ? activeConnMaterial : connMaterial;
+                    connIndex++;
+                }
+            }
+        }
+        
+        // Inicializar a cena
+        createNeurons();
+        
+        // Adicionar luz
+        const ambientLight = new THREE.AmbientLight(0x404040, 2);
+        scene.add(ambientLight);
+        
+        const light = new THREE.DirectionalLight(0xffffff, 1);
+        light.position.set(0, 10, 10);
+        scene.add(light);
+        
+        // Controles
+        document.getElementById('train').addEventListener('click', () => {
+            const error = nn.trainEpoch();
+            document.getElementById('error').textContent = error.toFixed(6);
+            updateVisualization();
+        });
+        
+        document.getElementById('train10').addEventListener('click', () => {
+            let error = 0;
+            for (let i = 0; i < 10; i++) {
+                error = nn.trainEpoch();
+            }
+            document.getElementById('error').textContent = error.toFixed(6);
+            updateVisualization();
+        });
+        
+        document.getElementById('reset').addEventListener('click', () => {
+            nn.reset();
+            document.getElementById('error').textContent = '---';
+            createNeurons();
+            updateVisualization();
+        });
+        
+        const lrSlider = document.getElementById('learningRate');
+        const lrValue = document.getElementById('lrValue');
+        
+        lrSlider.addEventListener('input', () => {
+            const value = parseFloat(lrSlider.value);
+            lrValue.textContent = value.toFixed(2);
+            nn.setLearningRate(value);
+        });
+        
+        // Redimensionar
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // Loop de animação
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Rotação suave das camadas para melhor visualização 3D
+            inputLayer.rotation.y = Math.sin(Date.now() * 0.001) * 0.1;
+            hiddenLayer.rotation.y = Math.sin(Date.now() * 0.001) * 0.1;
+            outputLayer.rotation.y = Math.sin(Date.now() * 0.001) * 0.1;
+            
+            renderer.render(scene, camera);
+        }
+        
+        animate();
+    </script>
+</body>
+</html>

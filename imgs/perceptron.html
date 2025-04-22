@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Perceptron 3D - Three.js (Azul/Vermelho)</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            background-color: #fff; /* Fundo branco */
+            color: #111; /* Texto preto */
+        }
+        canvas {
+            display: block;
+        }
+        .label {
+            color: #111; /* Preto */
+            background-color: rgba(255,255,255,0.8); /* Fundo branco semitransparente */
+            padding: 3px 6px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: bold;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px #fff; /* Sombra branca (opcional) */
+        }
+        .weight-label {
+            font-size: 12px;
+            font-style: italic;
+            color: #555;
+            background-color: rgba(255,255,255,0.6);
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            z-index: 100;
+            display:block;
+            padding: 5px;
+            background-color: rgba(255,255,255,0.7);
+            color: #111;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">Perceptron Simples com Three.js (Use o mouse para rotacionar/zoom)</div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        // Importa módulos necessários do Three.js
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+        // Variáveis globais da cena
+        let scene, camera, renderer, controls, labelRenderer;
+        const nodes = {}; // Para armazenar referências aos nós (esferas)
+        const lines = []; // Para armazenar referências às linhas (conexões)
+        const labels = []; // Para armazenar referências aos rótulos
+
+        // Cores (Azul e Vermelho como solicitado)
+        const blueColor = 0x4287f5; // Azul para entradas/bias
+        const redColor = 0xf54242;  // Vermelho para processamento/saída
+        const lineGrayColor = 0xaaaaaa; // Cinza para as linhas de conexão
+
+        // --- Função de Inicialização ---
+        function init() {
+            // Cria a cena
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xffffff); // Fundo branco
+
+            // Cria a câmera (Ortográfica para visualização 2D-like)
+            const aspect = window.innerWidth / window.innerHeight;
+            const frustumSize = 10; // Tamanho da área visível
+            camera = new THREE.OrthographicCamera(
+                frustumSize * aspect / -2,
+                frustumSize * aspect / 2,
+                frustumSize / 2,
+                frustumSize / -2,
+                0.1, // Near plane
+                1000 // Far plane
+            );
+            camera.position.set(0, 0, 10); // Posiciona a câmera
+            camera.lookAt(scene.position); // Faz a câmera olhar para o centro da cena
+
+            // Cria o renderizador WebGL
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Cria o renderizador CSS2D para os rótulos
+            labelRenderer = new CSS2DRenderer();
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.domElement.style.position = 'absolute';
+            labelRenderer.domElement.style.top = '0px';
+            document.body.appendChild(labelRenderer.domElement);
+
+            // Adiciona controles de órbita (para interatividade)
+            controls = new OrbitControls(camera, labelRenderer.domElement); // Usa o renderer de rótulos para eventos
+            controls.enableDamping = true; // Suaviza o movimento
+            controls.dampingFactor = 0.1;
+            controls.screenSpacePanning = false; // Mantém o pan no plano XY
+            controls.enableRotate = true; // Permite rotação
+            controls.enableZoom = true; // Permite zoom
+
+            // Adiciona luz ambiente
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7); // Luz suave geral
+            scene.add(ambientLight);
+
+            // Adiciona luz direcional
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight.position.set(5, 5, 5);
+            scene.add(directionalLight);
+
+            // Cria os elementos do perceptron
+            createPerceptron();
+
+            // Adiciona listener para redimensionamento da janela
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        // --- Função para Criar os Elementos do Perceptron ---
+        function createPerceptron() {
+            const sphereRadius = 0.5;
+            const sphereGeometry = new THREE.SphereGeometry(sphereRadius, 32, 32);
+
+            // Materiais
+            const inputMaterial = new THREE.MeshStandardMaterial({ color: blueColor, roughness: 0.5, metalness: 0.2 });
+            const processMaterial = new THREE.MeshStandardMaterial({ color: redColor, roughness: 0.5, metalness: 0.2 });
+            const lineMaterial = new THREE.LineBasicMaterial({ color: lineGrayColor, linewidth: 2 }); // Linewidth pode não ter efeito em todos os sistemas
+
+            // Posições (ajustadas para visualização)
+            const inputYStart = 1.5;
+            const inputSpacing = 1.5;
+            const layerSpacing = 3.0;
+
+            // Cria Nós de Entrada (x1, x2)
+            nodes.x1 = new THREE.Mesh(sphereGeometry, inputMaterial);
+            nodes.x1.position.set(-layerSpacing * 1.5, inputYStart, 0);
+            scene.add(nodes.x1);
+            addLabel(nodes.x1, 'x₁');
+
+            nodes.x2 = new THREE.Mesh(sphereGeometry, inputMaterial);
+            nodes.x2.position.set(-layerSpacing * 1.5, inputYStart - inputSpacing, 0);
+            scene.add(nodes.x2);
+            addLabel(nodes.x2, 'x₂');
+
+            // Cria Nó de Bias (1)
+            nodes.bias = new THREE.Mesh(sphereGeometry, inputMaterial);
+            nodes.bias.position.set(-layerSpacing * 1.5, inputYStart + inputSpacing, 0);
+            scene.add(nodes.bias);
+            addLabel(nodes.bias, '1 (Bias)');
+
+            // Cria Nó de Soma (Σ)
+            nodes.sum = new THREE.Mesh(sphereGeometry, processMaterial);
+            nodes.sum.position.set(0, 0, 0);
+            scene.add(nodes.sum);
+            addLabel(nodes.sum, 'Σ');
+
+            // Cria Nó de Ativação (f) - Usando 'f' em vez de '∫'
+            nodes.activation = new THREE.Mesh(sphereGeometry, processMaterial);
+            nodes.activation.position.set(layerSpacing, 0, 0);
+            scene.add(nodes.activation);
+            addLabel(nodes.activation, 'f'); // Ou '∫' se preferir
+
+            // Cria Nó de Saída (ŷ)
+            nodes.output = new THREE.Mesh(sphereGeometry, processMaterial);
+            nodes.output.position.set(layerSpacing * 2, 0, 0);
+            scene.add(nodes.output);
+            addLabel(nodes.output, 'ŷ');
+
+            // Cria Linhas de Conexão (Pesos) e Rótulos de Pesos
+            addLine(nodes.x1, nodes.sum, 'w₁', lineMaterial);
+            addLine(nodes.x2, nodes.sum, 'w₂', lineMaterial);
+            addLine(nodes.bias, nodes.sum, 'w₀', lineMaterial); // Peso do Bias
+            addLine(nodes.sum, nodes.activation, '', lineMaterial); // Conexão Soma -> Ativação
+            addLine(nodes.activation, nodes.output, '', lineMaterial); // Conexão Ativação -> Saída
+        }
+
+        // --- Função para Adicionar Rótulos CSS2D ---
+        function addLabel(nodeMesh, text) {
+            const labelDiv = document.createElement('div');
+            labelDiv.className = 'label';
+            labelDiv.textContent = text;
+
+            const labelObject = new CSS2DObject(labelDiv);
+            // Posiciona o rótulo ligeiramente acima ou ao lado do nó
+            labelObject.position.set(0, nodeMesh.geometry.parameters.radius * 1.2, 0);
+            nodeMesh.add(labelObject); // Adiciona o rótulo como filho do nó
+            labels.push(labelObject);
+        }
+
+         // --- Função para Adicionar Rótulos de Peso CSS2D ---
+        function addWeightLabel(linePoints, text) {
+            if (!text) return; // Não adiciona rótulo se o texto for vazio
+
+            const labelDiv = document.createElement('div');
+            labelDiv.className = 'label weight-label';
+            labelDiv.textContent = text;
+
+            const labelObject = new CSS2DObject(labelDiv);
+
+             // Calcula o ponto médio da linha
+            const midPoint = new THREE.Vector3().addVectors(linePoints[0], linePoints[1]).multiplyScalar(0.5);
+
+             // Calcula um pequeno deslocamento perpendicular à linha (no plano XY)
+             const dir = new THREE.Vector3().subVectors(linePoints[1], linePoints[0]).normalize();
+             const perpendicular = new THREE.Vector3(-dir.y, dir.x, 0).multiplyScalar(0.3); // Ajuste o escalar para a distância
+             midPoint.add(perpendicular);
+
+
+            labelObject.position.copy(midPoint);
+            scene.add(labelObject); // Adiciona o rótulo diretamente à cena
+            labels.push(labelObject);
+        }
+
+
+        // --- Função para Criar Linhas de Conexão ---
+        function addLine(startNode, endNode, weightLabelText, material) {
+            const startPos = startNode.position;
+            const endPos = endNode.position;
+
+            // Calcula pontos ligeiramente fora das esferas para a linha não começar/terminar exatamente no centro
+            const direction = new THREE.Vector3().subVectors(endPos, startPos).normalize();
+            const radius = startNode.geometry.parameters.radius; // Assume raios iguais
+            const adjustedStart = new THREE.Vector3().addVectors(startPos, direction.clone().multiplyScalar(radius));
+            const adjustedEnd = new THREE.Vector3().addVectors(endPos, direction.clone().multiplyScalar(-radius));
+
+            const points = [adjustedStart, adjustedEnd];
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const line = new THREE.Line(geometry, material);
+            scene.add(line);
+            lines.push(line);
+
+            // Adiciona rótulo de peso perto do meio da linha
+            addWeightLabel(points, weightLabelText);
+        }
+
+
+        // --- Função de Callback para Redimensionamento da Janela ---
+        function onWindowResize() {
+            const aspect = window.innerWidth / window.innerHeight;
+            const frustumSize = 10;
+
+            // Atualiza a câmera ortográfica
+            camera.left = frustumSize * aspect / -2;
+            camera.right = frustumSize * aspect / 2;
+            camera.top = frustumSize / 2;
+            camera.bottom = frustumSize / -2;
+            camera.updateProjectionMatrix(); // Aplica as mudanças
+
+            // Atualiza o tamanho dos renderizadores
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- Loop de Animação ---
+        function animate() {
+            requestAnimationFrame(animate); // Chama a próxima frame
+
+            controls.update(); // Atualiza os controles de órbita
+
+            // Renderiza a cena principal
+            renderer.render(scene, camera);
+            // Renderiza os rótulos CSS2D
+            labelRenderer.render(scene, camera);
+        }
+
+        // --- Inicia a aplicação ---
+        init();
+        animate();
+
+    </script>
+</body>
+</html>

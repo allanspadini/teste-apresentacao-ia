@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Botões de Regressão e Classificação com Three.js</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+        }
+        #container {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+        }
+        #description {
+            position: absolute;
+            bottom: 10px;
+            width: 100%;
+            text-align: center;
+            color: #333;
+            z-index: 100;
+            font-size: 16px;
+            background-color: rgba(255,255,255,0.7);
+            padding: 10px 0;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <div id="container">
+        <div id="description">Passe o mouse sobre os botões para ver a descrição</div>
+    </div>
+
+    <script>
+        // Configuração principal
+        const container = document.getElementById('container');
+        const infoText = document.getElementById('current-model');
+        const descriptionText = document.getElementById('description');
+        
+        // Variáveis do Three.js
+        let camera, scene, renderer;
+        let regressionButton, classificationButton;
+        let raycaster, mouse;
+        let selectedButton = null;
+        
+        // Dimensões dos botões
+        const buttonWidth = 3;
+        const buttonHeight = 3;
+        const buttonDepth = 0.5;
+        
+        // Cores (tema claro)
+        const normalColor = 0xdddddd;
+        const hoverColor = 0xbbbbbb;
+        const selectedColor = 0x999999;
+        const regressionColor = 0x4287f5;
+        const classificationColor1 = 0xf54242;
+        const classificationColor2 = 0x42f54e;
+        
+        // Inicializar cena
+        init();
+        animate();
+        
+        function init() {
+            // Configurar cena
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf0f0f0);
+            
+            // Configurar câmera
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 8;
+            
+            // Adicionar luz
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(1, 1, 1);
+            scene.add(directionalLight);
+            
+            // Criar botões
+            createRegressionButton();
+            createClassificationButton();
+            
+            // Configurar renderizador
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            container.appendChild(renderer.domElement);
+            
+            // Configurar raycaster para detecção de cliques
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+            
+            // Adicionar eventos
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('click', onClick);
+        }
+        
+        function createRegressionButton() {
+            // Criar geometria do botão
+            const geometry = new THREE.BoxGeometry(buttonWidth, buttonHeight, buttonDepth);
+            const material = new THREE.MeshPhongMaterial({ color: normalColor });
+            
+            regressionButton = new THREE.Mesh(geometry, material);
+            regressionButton.position.x = -2.5;
+            regressionButton.userData = { type: 'regression' };
+            scene.add(regressionButton);
+            
+            // Adicionar visualização de regressão (pontos + linha)
+            const regressionVisualization = new THREE.Group();
+            
+            // Adicionar pontos para regressão
+            for (let i = 0; i < 10; i++) {
+                const x = (i / 5) - 0.9;
+                // Adicionar um pouco de variação aos pontos
+                const y = 0.5 * x + 0.1 * (Math.random() - 0.5);
+                
+                const pointGeometry = new THREE.SphereGeometry(0.05, 16, 16);
+                const pointMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                const point = new THREE.Mesh(pointGeometry, pointMaterial);
+                
+                point.position.set(x, y, 0.3);
+                regressionVisualization.add(point);
+            }
+            
+            // Adicionar linha de regressão
+            const linePoints = [];
+            linePoints.push(new THREE.Vector3(-0.9, -0.45, 0.3));
+            linePoints.push(new THREE.Vector3(0.9, 0.45, 0.3));
+            
+            const lineMaterial = new THREE.LineBasicMaterial({ color: regressionColor, linewidth: 2 });
+            const lineGeometry = new THREE.BufferGeometry().setFromPoints(linePoints);
+            const line = new THREE.Line(lineGeometry, lineMaterial);
+            
+            regressionVisualization.add(line);
+            regressionButton.add(regressionVisualization);
+            
+            // Adicionar texto "Regressão"
+            const textCanvas = document.createElement('canvas');
+            const context = textCanvas.getContext('2d');
+            textCanvas.width = 256;
+            textCanvas.height = 64;
+            context.fillStyle = '#333333';
+            context.font = 'bold 32px Arial';
+            context.textAlign = 'center';
+            context.fillText('Regressão', 128, 40);
+            
+            const textTexture = new THREE.CanvasTexture(textCanvas);
+            const textMaterial = new THREE.MeshBasicMaterial({
+                map: textTexture,
+                transparent: true
+            });
+            
+            const textGeometry = new THREE.PlaneGeometry(2, 0.5);
+            const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+            textMesh.position.set(0, -1, 0.3);
+            
+            regressionButton.add(textMesh);
+        }
+        
+        function createClassificationButton() {
+            // Criar geometria do botão
+            const geometry = new THREE.BoxGeometry(buttonWidth, buttonHeight, buttonDepth);
+            const material = new THREE.MeshPhongMaterial({ color: normalColor });
+            
+            classificationButton = new THREE.Mesh(geometry, material);
+            classificationButton.position.x = 2.5;
+            classificationButton.userData = { type: 'classification' };
+            scene.add(classificationButton);
+            
+            // Adicionar visualização de classificação (pontos de duas classes)
+            const classificationVisualization = new THREE.Group();
+            
+            // Classe 1 (pontos vermelhos)
+            for (let i = 0; i < 8; i++) {
+                const x = (Math.random() * 0.8) - 0.9;
+                const y = (Math.random() * 0.8) - 0.4;
+                
+                const pointGeometry = new THREE.SphereGeometry(0.05, 16, 16);
+                const pointMaterial = new THREE.MeshBasicMaterial({ color: classificationColor1 });
+                const point = new THREE.Mesh(pointGeometry, pointMaterial);
+                
+                point.position.set(x, y, 0.3);
+                classificationVisualization.add(point);
+            }
+            
+            // Classe 2 (pontos verdes)
+            for (let i = 0; i < 8; i++) {
+                const x = (Math.random() * 0.8) + 0.1;
+                const y = (Math.random() * 0.8) - 0.4;
+                
+                const pointGeometry = new THREE.SphereGeometry(0.05, 16, 16);
+                const pointMaterial = new THREE.MeshBasicMaterial({ color: classificationColor2 });
+                const point = new THREE.Mesh(pointGeometry, pointMaterial);
+                
+                point.position.set(x, y, 0.3);
+                classificationVisualization.add(point);
+            }
+            
+            // Adicionar linha de separação (fronteira de decisão)
+            const linePoints = [];
+            linePoints.push(new THREE.Vector3(0, -0.8, 0.3));
+            linePoints.push(new THREE.Vector3(0, 0.8, 0.3));
+            
+            const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 });
+            const lineGeometry = new THREE.BufferGeometry().setFromPoints(linePoints);
+            const line = new THREE.Line(lineGeometry, lineMaterial);
+            
+            classificationVisualization.add(line);
+            classificationButton.add(classificationVisualization);
+            
+            // Adicionar texto "Classificação"
+            const textCanvas = document.createElement('canvas');
+            const context = textCanvas.getContext('2d');
+            textCanvas.width = 256;
+            textCanvas.height = 64;
+            context.fillStyle = '#333333';
+            context.font = 'bold 32px Arial';
+            context.textAlign = 'center';
+            context.fillText('Classificação', 128, 40);
+            
+            const textTexture = new THREE.CanvasTexture(textCanvas);
+            const textMaterial = new THREE.MeshBasicMaterial({
+                map: textTexture,
+                transparent: true
+            });
+            
+            const textGeometry = new THREE.PlaneGeometry(2, 0.5);
+            const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+            textMesh.position.set(0, -1, 0.3);
+            
+            classificationButton.add(textMesh);
+        }
+        
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        function onMouseMove(event) {
+            // Atualizar posição do mouse em coordenadas normalizadas (-1 a +1)
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            // Atualizar raycaster
+            raycaster.setFromCamera(mouse, camera);
+            
+            // Verificar intersecções com os botões
+            const intersects = raycaster.intersectObjects([regressionButton, classificationButton]);
+            
+            // Resetar cores dos botões
+            if (selectedButton !== regressionButton) {
+                regressionButton.material.color.set(normalColor);
+            }
+            
+            if (selectedButton !== classificationButton) {
+                classificationButton.material.color.set(normalColor);
+            }
+            
+            // Destacar botão sob o mouse
+            if (intersects.length > 0) {
+                const button = intersects[0].object;
+                if (button !== selectedButton) {
+                    button.material.color.set(hoverColor);
+                }
+                
+                // Atualizar descrição
+                if (button.userData.type === 'regression') {
+                    descriptionText.textContent = "Regressão: prever valores contínuos ajustando uma curva aos dados";
+                } else if (button.userData.type === 'classification') {
+                    descriptionText.textContent = "Classificação: separar dados em categorias diferentes";
+                }
+            } else {
+                descriptionText.textContent = "Passe o mouse sobre os botões e clique para selecionar um modelo";
+            }
+        }
+        
+        function onClick(event) {
+            // Atualizar posição do mouse em coordenadas normalizadas
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            // Atualizar raycaster
+            raycaster.setFromCamera(mouse, camera);
+            
+            // Verificar intersecções com os botões
+            const intersects = raycaster.intersectObjects([regressionButton, classificationButton]);
+            
+            if (intersects.length > 0) {
+                const button = intersects[0].object;
+                
+                // Desselecionar botão anterior
+                if (selectedButton) {
+                    selectedButton.material.color.set(normalColor);
+                }
+                
+                // Selecionar novo botão
+                selectedButton = button;
+                button.material.color.set(selectedColor);
+                
+                // Removida a atualização do texto de informação
+                
+                // Animar botão selecionado
+                animateSelectedButton();
+            }
+        }
+        
+        function animateSelectedButton() {
+            if (selectedButton) {
+                // Pequena animação de rotação
+                gsap.to(selectedButton.rotation, {
+                    y: Math.PI * 2,
+                    duration: 1,
+                    ease: "power2.inOut",
+                    onComplete: () => {
+                        selectedButton.rotation.y = 0;
+                    }
+                });
+            }
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Removida a rotação automática dos botões
+            
+            renderer.render(scene, camera);
+        }
+        
+        // Função GSAP simplificada (já que não temos a biblioteca)
+        const gsap = {
+            to: (object, config) => {
+                const startTime = Date.now();
+                const startValues = {};
+                const targetValues = {};
+                const duration = config.duration * 1000;
+                
+                // Salvar valores iniciais
+                for (const prop in config) {
+                    if (prop !== 'duration' && prop !== 'ease' && prop !== 'onComplete') {
+                        startValues[prop] = object[prop];
+                        targetValues[prop] = config[prop];
+                    }
+                }
+                
+                function update() {
+                    const elapsed = Date.now() - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+                    
+                    // Atualizar propriedades
+                    for (const prop in targetValues) {
+                        object[prop] = startValues[prop] + (targetValues[prop] - startValues[prop]) * progress;
+                    }
+                    
+                    if (progress < 1) {
+                        requestAnimationFrame(update);
+                    } else if (config.onComplete) {
+                        config.onComplete();
+                    }
+                }
+                
+                update();
+            }
+        };
+    </script>
+</body>
+</html>
